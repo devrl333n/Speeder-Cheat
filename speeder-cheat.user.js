@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Speeder Cheat
-// @namespace    speeder-cheat
-// @version      1.2.1 Official
-// @description  time accelerator with GhostShield™
+// @namespace    speeder-cheat-official
+// @version      1.2.2 Official
+// @description  Professional time accelerator with GhostShield™
 // @author       devrl333
 // @match        *://*/*
 // @grant        none
@@ -13,26 +13,30 @@
   'use strict';
 
   const N = {
-    setTimeout:   window.setTimeout.bind(window),
-    setInterval:  window.setInterval.bind(window),
-    clearTimeout: window.clearTimeout.bind(window),
+    setTimeout:    window.setTimeout.bind(window),
+    setInterval:   window.setInterval.bind(window),
+    clearTimeout:  window.clearTimeout.bind(window),
     clearInterval: window.clearInterval.bind(window),
-    DateNow:      Date.now.bind(Date),
-    PerfNow:      window.performance?.now.bind(window.performance) ?? (() => 0),
-    RAF:          window.requestAnimationFrame?.bind(window) ?? (cb => cb(0)),
-    Fetch:        window.fetch?.bind(window) ?? null,
-    FnToString:   Function.prototype.toString,
-    AudioCtx:     window.AudioContext || window.webkitAudioContext,
-    SW:           navigator.serviceWorker,
+    DateNow:       Date.now.bind(Date),
+    PerfNow:       window.performance?.now.bind(window.performance) ?? (() => 0),
+    RAF:           window.requestAnimationFrame?.bind(window) ?? (cb => cb(0)),
+    Fetch:         window.fetch?.bind(window) ?? null,
+    XHROpen:       XMLHttpRequest.prototype.open,
+    XHRSend:       XMLHttpRequest.prototype.send,
+    WebSocket:     window.WebSocket,
+    FnToString:    Function.prototype.toString,
+    AudioCtx:      window.AudioContext || window.webkitAudioContext,
+    RTCPeerConn:   window.RTCPeerConnection || window.webkitRTCPeerConnection,
   };
 
   const _ns = new WeakMap();
   Function.prototype.toString = function() {
     return _ns.has(this) ? _ns.get(this) : N.FnToString.call(this);
   };
+  _ns.set(Function.prototype.toString, 'function toString() { [native code] }');
 
   const DOMAIN = location.hostname.replace(/^www\./, '');
-  const SKEY = 'sc_off_' + DOMAIN;
+  const SKEY = 'sc_official_' + DOMAIN;
   const _load = () => { try { return JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch { return {}; } };
   const _save = d => { try { localStorage.setItem(SKEY, JSON.stringify(d)); } catch {} };
 
@@ -40,14 +44,18 @@
   const MIN = 1, MAX = 1000, STEP = 0.25;
   let SPEED = Math.max(MIN, Math.min(MAX, parseFloat(P.speed) || 3));
   if (isNaN(SPEED)) SPEED = 3;
+  let TIME_SYNC = P.timeSync !== undefined ? P.timeSync : true;
+  let USER_SIM  = P.simulate || false;
 
-  function persist() { _save({ speed: SPEED }); }
+  const persist = () => _save({ speed: SPEED, timeSync: TIME_SYNC, simulate: USER_SIM });
 
-  let dVE, dRE, pVE, pRE, cachedTO;
-  dVE = dRE = N.DateNow();
-  pVE = pRE = N.PerfNow();
+  const realNow = () => N.DateNow();
 
-  const vNow = () => dVE + (N.DateNow() - dRE) * SPEED;
+  let dVE = N.DateNow(), dRE = dVE;
+  let pVE = N.PerfNow(), pRE = pVE;
+  let cachedTO = dVE - pVE;
+
+  const vNow  = () => dVE + (N.DateNow() - dRE) * SPEED;
   const vPerf = () => pVE + (N.PerfNow() - pRE) * SPEED;
 
   function setSpeed(v, save = true) {
@@ -56,10 +64,8 @@
     s = Math.max(MIN, Math.min(MAX, s));
     if (s === SPEED) return;
     const rn = N.DateNow(), pn = N.PerfNow();
-    dVE = dVE + (rn - dRE) * SPEED;
-    dRE = rn;
-    pVE = pVE + (pn - pRE) * SPEED;
-    pRE = pn;
+    dVE = dVE + (rn - dRE) * SPEED; dRE = rn;
+    pVE = pVE + (pn - pRE) * SPEED; pRE = pn;
     SPEED = s;
     cachedTO = dVE - pVE;
     if (UI.speedEl) UI.speedEl.textContent = SPEED % 1 === 0 ? SPEED.toFixed(0) : SPEED.toFixed(2);
@@ -67,12 +73,18 @@
   }
 
   const OrigDate = window.Date;
-  class VDate extends OrigDate {
-    constructor(...a) { super(...(a.length ? a : [vNow()])); }
-    static now() { return vNow(); }
-    static parse = OrigDate.parse;
-    static UTC = OrigDate.UTC;
-  }
+  const VDate = new Proxy(OrigDate, {
+    construct(target, args) {
+      if (args.length === 0) return new target(vNow());
+      return new target(...args);
+    },
+    apply(target, thisArg, args) {
+      return new target(vNow()).toString();
+    }
+  });
+  VDate.now = () => vNow();
+  VDate.parse = OrigDate.parse;
+  VDate.UTC = OrigDate.UTC;
   window.Date = VDate;
   _ns.set(VDate, 'function Date() { [native code] }');
   _ns.set(VDate.now, 'function now() { [native code] }');
@@ -84,22 +96,21 @@
     if ('timeOrigin' in window.performance) {
       Object.defineProperty(window.performance, 'timeOrigin', { get: () => cachedTO, configurable: true });
     }
-    cachedTO = dVE - pVE;
   }
 
   const wrapTimer = (orig, rep) => {
     const fn = function(cb, ms, ...a) {
-      const t = Math.max(rep ? 4 : 0, Math.round((+ms || 0) / SPEED));
-      return orig.call(window, cb, t, ...a);
+      return orig.call(window, cb, Math.max(rep ? 4 : 0, Math.round((+ms || 0) / SPEED)), ...a);
     };
     _ns.set(fn, rep ? 'function setInterval() { [native code] }' : 'function setTimeout() { [native code] }');
     return fn;
   };
-  window.setTimeout = wrapTimer(N.setTimeout, false);
+  window.setTimeout  = wrapTimer(N.setTimeout, false);
   window.setInterval = wrapTimer(N.setInterval, true);
 
-  window.requestAnimationFrame = cb => N.RAF(() => cb(vPerf()));
-  _ns.set(window.requestAnimationFrame, 'function requestAnimationFrame() { [native code] }');
+  const rafWrap = cb => N.RAF(() => cb(vPerf()));
+  _ns.set(rafWrap, 'function requestAnimationFrame() { [native code] }');
+  window.requestAnimationFrame = rafWrap;
 
   if (window.HTMLMediaElement?.prototype) {
     const d = Object.getOwnPropertyDescriptor(window.HTMLMediaElement.prototype, 'playbackRate');
@@ -107,49 +118,188 @@
       const orig = d.set;
       Object.defineProperty(window.HTMLMediaElement.prototype, 'playbackRate', {
         get: d.get,
-        set(v) { orig.call(this, Math.max(0.0625, Math.min(MAX, v * SPEED))); },
+        set(v) { orig.call(this, Math.max(0.0625, Math.min(16, v * SPEED))); },
         configurable: true
       });
     }
   }
 
+  function patchTS(str) {
+    if (typeof str !== 'string') return str;
+    return str.replace(/([?&])(timestamp|time|ts)=(\d{10,13})/gi, (_, sep, key) => `${sep}${key}=${Math.floor(realNow())}`);
+  }
+
+  function patchBody(body) {
+    if (!body) return body;
+    if (typeof body === 'string') {
+      try {
+        const json = JSON.parse(body);
+        let changed = false;
+        for (const k of ['timestamp','time','ts']) {
+          if (typeof json[k] === 'number') { json[k] = Math.floor(realNow()); changed = true; }
+        }
+        return changed ? JSON.stringify(json) : patchTS(body);
+      } catch { return patchTS(body); }
+    }
+    if (body instanceof URLSearchParams) {
+      const p = new URLSearchParams(body);
+      for (const k of ['timestamp','time','ts']) if (p.has(k)) p.set(k, Math.floor(realNow()));
+      return p;
+    }
+    if (body instanceof FormData) {
+      const f = new FormData();
+      body.forEach((v, k) => {
+        f.append(k, ['timestamp','time','ts'].includes(k) ? Math.floor(realNow()) : v);
+      });
+      return f;
+    }
+    return body;
+  }
+
+  if (N.Fetch) {
+    window.fetch = async function(...args) {
+      let url = '', opts = args[1] ? { ...args[1] } : {};
+      let finalUrl, finalOpts;
+      if (args[0] instanceof Request) {
+        const req = args[0];
+        url = req.url;
+        finalUrl = TIME_SYNC ? patchTS(url) : url;
+        finalOpts = {
+          method: req.method, headers: new Headers(req.headers),
+          body: req.body, mode: req.mode,
+          credentials: req.credentials, cache: req.cache,
+          redirect: req.redirect, referrer: req.referrer,
+          integrity: req.integrity,
+        };
+        if (TIME_SYNC && finalOpts.body && req.method !== 'GET' && req.method !== 'HEAD') {
+          try { finalOpts.body = patchBody(finalOpts.body); } catch(e) {}
+        }
+      } else {
+        url = args[0]?.toString() || '';
+        finalUrl = TIME_SYNC ? patchTS(url) : url;
+        finalOpts = { ...opts, headers: new Headers(opts.headers || {}) };
+        if (TIME_SYNC && finalOpts.body) {
+          try { finalOpts.body = patchBody(finalOpts.body); } catch(e) {}
+        }
+      }
+      return N.Fetch(finalUrl, finalOpts);
+    };
+    _ns.set(window.fetch, 'function fetch() { [native code] }');
+  }
+
+  XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+    this._sc = { method, url: TIME_SYNC ? patchTS(url) : url, async: async !== false };
+    return N.XHROpen.call(this, method, this._sc.url, async, user, password);
+  };
+  XMLHttpRequest.prototype.send = function(body) {
+    if (TIME_SYNC && this._sc && body) {
+      try { body = patchBody(body); } catch(e) {}
+    }
+    return N.XHRSend.call(this, body);
+  };
+
+  if (navigator.sendBeacon) {
+    const ob = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = function(url, data) {
+      return ob(TIME_SYNC ? patchTS(url) : url, TIME_SYNC ? patchBody(data) : data);
+    };
+  }
+
+  if (N.WebSocket) {
+    window.WebSocket = new Proxy(N.WebSocket, {
+      construct(target, args) {
+        const ws = Reflect.construct(target, args);
+        try {
+          const origSend = ws.send.bind(ws);
+          ws.send = function(data) {
+            if (typeof data === 'string') data = patchTS(data);
+            return origSend(data);
+          };
+          let listener = null;
+          Object.defineProperty(ws, 'onmessage', {
+            set(fn) {
+              this._realMsg = fn;
+              if (listener) ws.removeEventListener('message', listener);
+              listener = e => {
+                if (typeof e.data !== 'string') return fn.call(this, e);
+                try {
+                  const p = JSON.parse(e.data);
+                  let hit = false;
+                  for (const k of ['remaining','countdown','seconds','wait','delay','timeLeft']) {
+                    if (typeof p[k] === 'number' && p[k] > 0) {
+                      p[k] = Math.max(0, Math.ceil(p[k] / SPEED)); hit = true;
+                    }
+                  }
+                  fn.call(this, hit ? new MessageEvent('message', { data: JSON.stringify(p), origin: e.origin }) : e);
+                } catch { fn.call(this, e); }
+              };
+              ws.addEventListener('message', listener);
+            },
+            get() { return this._realMsg; },
+            configurable: true
+          });
+        } catch(e) {}
+        return ws;
+      }
+    });
+    _ns.set(window.WebSocket, 'function WebSocket() { [native code] }');
+  }
+
+  if (N.RTCPeerConn) {
+    const origRTC = N.RTCPeerConn;
+    const fakeRTC = function(config) {
+      config = config || {};
+      config.iceTransportPolicy = 'relay';
+      return new origRTC(config);
+    };
+    fakeRTC.prototype = origRTC.prototype;
+    window.RTCPeerConnection = fakeRTC;
+    window.webkitRTCPeerConnection = fakeRTC;
+    _ns.set(fakeRTC, 'function RTCPeerConnection() { [native code] }');
+  }
+
   const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
-  const def = (o, k, g) => { try { Object.defineProperty(o, k, { get: g, configurable: true }); } catch(e) {} };
-  def(navigator, 'webdriver', () => false);
-  def(navigator, 'plugins', () => ({ length: 3, item: () => null, namedItem: () => null }));
-  def(navigator, 'languages', () => ['en-US', 'en']);
-  def(navigator, 'hardwareConcurrency', () => isMobile ? 8 : 12);
-  def(navigator, 'deviceMemory', () => isMobile ? 4 : 8);
-  def(navigator, 'connection', () => ({ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false }));
-  def(screen, 'colorDepth', () => 24);
-  def(screen, 'pixelDepth', () => 24);
+  const safeProtoDef = (cls, key, getter) => {
+    try {
+      if (!(key in cls.prototype) || Object.getOwnPropertyDescriptor(cls.prototype, key)?.configurable) {
+        Object.defineProperty(cls.prototype, key, { get: getter, configurable: true, enumerable: true });
+      }
+    } catch(e) {}
+  };
+  safeProtoDef(Navigator, 'webdriver',           () => false);
+  safeProtoDef(Navigator, 'plugins',             () => ({ length: 3, item: () => null, namedItem: () => null }));
+  safeProtoDef(Navigator, 'languages',           () => ['en-US', 'en']);
+  safeProtoDef(Navigator, 'hardwareConcurrency', () => isMobile ? 8 : 12);
+  safeProtoDef(Navigator, 'deviceMemory',        () => isMobile ? 4 : 8);
+  safeProtoDef(Navigator, 'connection',          () => ({ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false }));
+  if ('permissions' in Navigator.prototype) {
+    safeProtoDef(Navigator, 'permissions', () => ({ query: () => Promise.resolve({ state: 'prompt' }) }));
+  }
+  if ('mediaDevices' in Navigator.prototype) {
+    safeProtoDef(Navigator, 'mediaDevices', () => ({ getUserMedia: () => Promise.reject(new Error('NotAllowedError')), enumerateDevices: () => Promise.resolve([]) }));
+  }
+  safeProtoDef(Screen,    'colorDepth',          () => 24);
+  safeProtoDef(Screen,    'pixelDepth',          () => 24);
+
+  try { Object.defineProperty(Error.prototype, 'stack', { get: () => '', configurable: true }); } catch(e) {}
 
   if (window.HTMLCanvasElement) {
-    const oURL = window.HTMLCanvasElement.prototype.toDataURL;
+    const oURL  = window.HTMLCanvasElement.prototype.toDataURL;
     const oBlob = window.HTMLCanvasElement.prototype.toBlob;
-    const fuzz = function() {
+    const fuzz  = function() {
       const ctx = this.getContext('2d');
       if (!ctx || !this.width || !this.height) return;
       try {
-        const img = ctx.getImageData(0, 0, this.width, this.height);
-        const data = img.data;
-        const buf = new Uint8Array(Math.ceil(data.length / 4));
-        crypto.getRandomValues(buf);
-        for (let i = 0, b = 0; i < data.length; i += 4, b++) {
-          if ((buf[b] & 0x3F) === 0) {
-            data[i]   ^= buf[b] & 1;
-            data[i+1] ^= (buf[b] >> 1) & 1;
-            data[i+2] ^= (buf[b] >> 2) & 1;
-          }
-        }
-        ctx.putImageData(img, 0, 0);
         const s = new Uint8Array(4);
         crypto.getRandomValues(s);
         const pa = ctx.globalAlpha;
-        ctx.globalAlpha = 0.002;
-        ctx.fillStyle = `rgb(${s[0]%4},${s[1]%4},${s[2]%4})`;
+        const pc = ctx.globalCompositeOperation;
+        ctx.globalAlpha = 0.003;
+        ctx.globalCompositeOperation = 'difference';
+        ctx.fillStyle = `rgb(${s[0]%5},${s[1]%5},${s[2]%5})`;
         ctx.fillRect(s[3] % Math.max(1, this.width - 1), 0, 1, 1);
         ctx.globalAlpha = pa;
+        ctx.globalCompositeOperation = pc;
       } catch(e) {}
     };
     window.HTMLCanvasElement.prototype.toDataURL = function(...a) { fuzz.call(this); return oURL.apply(this, a); };
@@ -168,170 +318,235 @@
   glPatch(window.WebGLRenderingContext?.prototype);
   glPatch(window.WebGL2RenderingContext?.prototype);
 
-  if (N.AudioCtx) {
-    try {
-      const proto = window.AnalyserNode?.prototype;
-      if (proto?.getFloatTimeDomainData) {
-        const orig = proto.getFloatTimeDomainData;
-        proto.getFloatTimeDomainData = function(arr) {
-          orig.call(this, arr);
-          for (let i = 0; i < arr.length; i++) arr[i] += (Math.random() - 0.5) * 1e-8;
-        };
-      }
-    } catch(e) {}
-  }
+  try {
+    const ana = window.AnalyserNode?.prototype;
+    if (ana?.getFloatTimeDomainData) {
+      const oa = ana.getFloatTimeDomainData;
+      ana.getFloatTimeDomainData = function(arr) {
+        oa.call(this, arr);
+        const b = new Uint8Array(arr.length * 4);
+        crypto.getRandomValues(b);
+        const f = new Float32Array(b.buffer);
+        for (let i = 0; i < arr.length; i++) arr[i] += f[i] * 1e-10;
+      };
+    }
+  } catch(e) {}
 
-  if (N.SW) {
-    def(navigator, 'serviceWorker', () => ({
-      getRegistrations: () => Promise.resolve([]),
-      register: () => Promise.reject(new Error('registration failed')),
-      ready: Promise.resolve({ active: null })
-    }));
-  }
+  try {
+    Object.defineProperty(document, 'hidden',          { get: () => false,     configurable: true });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+  } catch(e) {}
 
-  const forceVisible = () => {
-    try { Object.defineProperty(document, 'hidden', { get: () => false, configurable: true }); } catch(e) {}
-    try { Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true }); } catch(e) {}
+  const origAdd = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function(type, fn, opt) {
+    if (type === 'visibilitychange') return;
+    return origAdd.call(this, type, fn, opt);
   };
-  forceVisible();
-  N.setInterval(forceVisible, 200);
+  _ns.set(EventTarget.prototype.addEventListener, 'function addEventListener() { [native code] }');
+
+  const UserSim = {
+    id: null,
+    start() {
+      if (this.id) return;
+      this.id = N.setInterval(() => {
+        if (!USER_SIM) return;
+        window.scrollBy({ top: (Math.random() - 0.5) * 80, behavior: 'smooth' });
+        if (Math.random() < 0.2) {
+          const x = 50 + Math.random() * (innerWidth  - 100);
+          const y = 50 + Math.random() * (innerHeight - 100);
+          document.elementFromPoint(x, y)?.dispatchEvent(
+            new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true })
+          );
+        }
+      }, 10000 + Math.random() * 5000);
+    },
+    stop() { if (this.id) { N.clearInterval(this.id); this.id = null; } }
+  };
 
   const UI = {
     dot: null, panel: null, speedEl: null, hideTimer: null,
-    createDot() {
-      this.dot = document.createElement('div');
-      this.dot.style.cssText = 'position:fixed;bottom:20px;right:16px;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,0.3);z-index:2147483645;cursor:pointer;';
-      this.dot.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.toggle();
-      });
-      document.body.appendChild(this.dot);
+
+    init() {
+      const mount = () => {
+        if (document.getElementById('sc-dot')) return;
+        this.build();
+      };
+      document.body ? mount() : document.addEventListener('DOMContentLoaded', mount);
     },
-    show() {
-      if (this.panel) return;
-      const p = document.createElement('div');
-      p.style.cssText = 'position:fixed;bottom:52px;right:10px;z-index:2147483647;background:rgba(10,10,18,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:16px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:10px;font-family:system-ui,sans-serif;min-width:180px;';
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;';
-      const btnMinus = document.createElement('button');
-      btnMinus.textContent = '−';
-      btnMinus.style.cssText = 'width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.1);color:#fff;border:none;font-size:20px;cursor:pointer;';
-      btnMinus.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); setSpeed(SPEED - STEP); });
-      this.speedEl = document.createElement('span');
-      this.speedEl.textContent = SPEED % 1 === 0 ? SPEED.toFixed(0) : SPEED.toFixed(2);
-      this.speedEl.style.cssText = 'font-size:32px;font-weight:700;color:#fff;min-width:60px;text-align:center;cursor:pointer;';
-      this.speedEl.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.min = MIN;
-        input.max = MAX;
-        input.step = 'any';
-        input.value = SPEED;
-        input.style.cssText = 'width:60px;height:36px;background:transparent;border:1px solid rgba(255,255,255,0.3);color:#fff;font-size:24px;text-align:center;border-radius:6px;outline:none;';
-        this.speedEl.replaceWith(input);
-        input.focus();
-        const commit = () => { setSpeed(input.value); input.replaceWith(this.speedEl); };
-        input.addEventListener('blur', commit);
-        input.addEventListener('keydown', ev => { if (ev.key === 'Enter') commit(); });
+
+    build() {
+      this.dot = document.createElement('div');
+      this.dot.id = 'sc-dot';
+      Object.assign(this.dot.style, {
+        position: 'fixed', bottom: '20px', right: '16px',
+        width: '20px', height: '20px', borderRadius: '50%',
+        background: 'rgba(255,255,255,0.3)',
+        zIndex: '2147483645', cursor: 'pointer',
+        boxShadow: '0 0 8px rgba(0,0,0,0.5)'
       });
-      const btnPlus = document.createElement('button');
-      btnPlus.textContent = '+';
-      btnPlus.style.cssText = 'width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.1);color:#fff;border:none;font-size:20px;cursor:pointer;';
-      btnPlus.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); setSpeed(SPEED + STEP); });
-      row.appendChild(btnMinus);
+      this.dot.addEventListener('pointerup', e => {
+        e.preventDefault(); e.stopPropagation(); this.togglePanel();
+      });
+      this.dot.addEventListener('pointerdown', e => {
+        e.preventDefault(); e.stopPropagation();
+      });
+
+      this.panel = document.createElement('div');
+      this.panel.id = 'sc-panel';
+      Object.assign(this.panel.style, {
+        display: 'none', position: 'fixed', bottom: '52px', right: '10px',
+        background: 'rgba(10,10,20,0.94)',
+        border: '1px solid rgba(255,255,255,0.12)', borderRadius: '14px',
+        padding: '12px', minWidth: '172px',
+        zIndex: '2147483647', flexDirection: 'column', alignItems: 'stretch',
+        gap: '8px', fontFamily: 'system-ui, -apple-system, sans-serif',
+        boxShadow: '0 8px 28px rgba(0,0,0,0.65), 0 0 20px rgba(0,240,255,0.15)'
+      });
+
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;';
+
+      const btnM = document.createElement('button');
+      btnM.textContent = '−';
+      btnM.style.cssText = 'width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,0.09);border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+      btnM.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); setSpeed(SPEED - STEP); this.resetTimer(); });
+
+      this.speedEl = document.createElement('span');
+      this.speedEl.id = 'sc-spd';
+      this.speedEl.textContent = SPEED % 1 === 0 ? SPEED.toFixed(0) : SPEED.toFixed(2);
+      this.speedEl.style.cssText = 'font-size:28px;font-weight:800;color:#fff;min-width:54px;text-align:center;cursor:pointer;';
+      this.speedEl.addEventListener('pointerdown', e => {
+        e.preventDefault(); e.stopPropagation();
+        const inp = document.createElement('input');
+        inp.id = 'sc-spd-input'; inp.type = 'number';
+        inp.min = MIN; inp.max = MAX; inp.step = 'any'; inp.value = SPEED;
+        inp.style.cssText = 'width:54px;font-size:22px;font-weight:700;background:transparent;border:1px solid rgba(255,255,255,0.3);color:#fff;text-align:center;border-radius:6px;outline:none;padding:2px 0;';
+        this.speedEl.replaceWith(inp);
+        inp.focus();
+        const done = () => { setSpeed(inp.value); inp.replaceWith(this.speedEl); };
+        inp.addEventListener('blur', done);
+        inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') done(); });
+      });
+
+      const btnP = document.createElement('button');
+      btnP.textContent = '+';
+      btnP.style.cssText = 'width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,0.09);border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+      btnP.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); setSpeed(SPEED + STEP); this.resetTimer(); });
+
+      row.appendChild(btnM);
       row.appendChild(this.speedEl);
-      row.appendChild(btnPlus);
-      p.appendChild(row);
-      const turboBtn = document.createElement('button');
-      turboBtn.textContent = 'Turbo 1000x';
-      turboBtn.style.cssText = 'padding:6px 12px;border-radius:8px;background:rgba(255,180,0,0.2);color:#ffb400;border:1px solid rgba(255,180,0,0.4);font-size:13px;font-weight:bold;cursor:pointer;';
-      turboBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); setSpeed(1000); });
-      p.appendChild(turboBtn);
+      row.appendChild(btnP);
+      this.panel.appendChild(row);
+
+      const turbo = document.createElement('button');
+      turbo.id = 'sc-turbo';
+      turbo.textContent = 'Turbo 1000x';
+      turbo.style.cssText = 'width:100%;height:32px;border-radius:8px;font-size:12px;font-weight:700;background:rgba(255,170,0,0.2);color:#ffa500;border:1px solid rgba(255,170,0,0.3);cursor:pointer;';
+      turbo.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); setSpeed(1000); this.resetTimer(); });
+      this.panel.appendChild(turbo);
+
       const clearBtn = document.createElement('button');
+      clearBtn.id = 'sc-clear';
       clearBtn.textContent = 'Clear Data';
-      clearBtn.style.cssText = 'width:100%;padding:6px;background:rgba(255,80,80,0.25);border:1px solid rgba(255,80,80,0.4);border-radius:8px;color:#ff8a8a;font-size:12px;cursor:pointer;';
-      clearBtn.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        document.cookie.split(';').forEach(c => document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/'));
+      clearBtn.style.cssText = 'width:100%;height:32px;border-radius:8px;font-size:12px;font-weight:700;background:rgba(200,50,50,0.15);color:#f88;border:1px solid rgba(200,50,50,0.3);cursor:pointer;';
+      clearBtn.addEventListener('pointerdown', e => {
+        e.preventDefault(); e.stopPropagation();
+        document.cookie.split(';').forEach(c => {
+          document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/');
+        });
         try { localStorage.clear(); } catch(e) {}
         try { sessionStorage.clear(); } catch(e) {}
         location.reload();
       });
-      p.appendChild(clearBtn);
-      document.body.appendChild(p);
-      this.panel = p;
-      this.resetTimer();
-      this.makeDraggable(p);
-    },
-    hide() {
-      if (this.panel) { this.panel.remove(); this.panel = null; }
-      if (this.hideTimer) { clearTimeout(this.hideTimer); this.hideTimer = null; }
-    },
-    toggle() { this.panel ? this.hide() : this.show(); },
-    resetTimer() {
-      if (this.hideTimer) clearTimeout(this.hideTimer);
-      this.hideTimer = N.setTimeout(() => this.hide(), 15000);
-    },
-    makeDraggable(el) {
-      let sx, sy, sl, st, dragging = false;
-      const start = e => {
-        e.preventDefault();
-        const p = e.touches ? e.touches[0] : e;
-        sx = p.clientX; sy = p.clientY;
-        sl = el.offsetLeft; st = el.offsetTop;
-        dragging = true;
-        el.style.transition = 'none';
-        this.resetTimer();
-      };
-      const move = e => {
-        if (!dragging) return;
-        const p = e.touches ? e.touches[0] : e;
-        el.style.left = Math.max(0, Math.min(window.innerWidth - el.offsetWidth, sl + p.clientX - sx)) + 'px';
-        el.style.top = Math.max(0, Math.min(window.innerHeight - el.offsetHeight, st + p.clientY - sy)) + 'px';
-      };
-      const end = () => { dragging = false; };
-      el.addEventListener('mousedown', start);
-      el.addEventListener('touchstart', start, { passive: false });
-      window.addEventListener('mousemove', move);
-      window.addEventListener('touchmove', move, { passive: false });
-      window.addEventListener('mouseup', end);
-      window.addEventListener('touchend', end);
-    },
-    build() {
-      this.createDot();
+      this.panel.appendChild(clearBtn);
+
+      document.body.appendChild(this.panel);
+      document.body.appendChild(this.dot);
+
       const brand = document.createElement('div');
+      brand.id = 'sc-brand';
       brand.textContent = 'Speeder Cheat';
       brand.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);font-size:17px;font-weight:800;z-index:2147483646;pointer-events:none;font-family:system-ui,sans-serif;letter-spacing:1px;background:linear-gradient(90deg,transparent,#fff,transparent);background-size:200% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:sc-shine 2.5s linear infinite;';
       document.body.appendChild(brand);
+
       const sig = document.createElement('div');
+      sig.id = 'sc-sig';
       sig.textContent = 'Created by devrl333';
       sig.style.cssText = 'position:fixed;bottom:12px;left:50%;transform:translateX(-50%);font-size:12px;font-weight:600;z-index:2147483646;pointer-events:none;font-family:system-ui,sans-serif;background:linear-gradient(90deg,red,orange,yellow,green,blue,indigo,violet);background-size:200% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:sc-rainbow 3s linear infinite;';
       document.body.appendChild(sig);
+
       if (!document.getElementById('sc-styles')) {
-        const s = document.createElement('style');
-        s.id = 'sc-styles';
-        s.textContent = '@keyframes sc-rainbow{0%{background-position:0% 50%}100%{background-position:200% 50%}}@keyframes sc-shine{0%{background-position:-200% 50%}100%{background-position:200% 50%}}';
-        document.head.appendChild(s);
+        const style = document.createElement('style');
+        style.id = 'sc-styles';
+        style.textContent = `
+          @keyframes sc-rainbow { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+          @keyframes sc-shine   { 0% { background-position: -200% 50%; } 100% { background-position: 200% 50%; } }
+        `;
+        document.head.appendChild(style);
       }
+
+      this.bindDrag(this.dot, this.panel);
+    },
+
+    togglePanel() {
+      if (!this.panel) return;
+      const isOpen = this.panel.style.display === 'flex';
+      this.panel.style.display = isOpen ? 'none' : 'flex';
+      if (!isOpen) this.resetTimer();
+      else this.clearTimer();
+    },
+
+    clearTimer() { if (this.hideTimer) { N.clearTimeout(this.hideTimer); this.hideTimer = null; } },
+    resetTimer() {
+      this.clearTimer();
+      this.hideTimer = N.setTimeout(() => { if (this.panel) this.panel.style.display = 'none'; }, 12000);
+    },
+
+    bindDrag(handle, panel) {
+      let sx, sy, bx, by, mv = false;
+      handle.addEventListener('pointerdown', e => {
+        if (e.target.tagName === 'BUTTON' || e.target.id === 'sc-spd') return;
+        sx = e.clientX; sy = e.clientY;
+        bx = parseInt(panel.style.right  || 10);
+        by = parseInt(panel.style.bottom || 52);
+        mv = false;
+        handle.setPointerCapture(e.pointerId);
+        e.stopPropagation();
+      });
+      handle.addEventListener('pointermove', e => {
+        const dx = e.clientX - sx, dy = e.clientY - sy;
+        if (!mv && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+        mv = true;
+        panel.style.right  = Math.max(0, bx - dx) + 'px';
+        panel.style.bottom = Math.max(0, by + dy) + 'px';
+      });
+      handle.addEventListener('pointerup', e => {
+        mv = false;
+        handle.releasePointerCapture(e.pointerId);
+      });
     }
   };
 
+  window.SpeedCheat = {
+    setSpeed,
+    get speed()     { return SPEED; },
+    set timeSync(v) { TIME_SYNC = v; persist(); },
+    get timeSync()  { return TIME_SYNC; },
+    set simulate(v) { USER_SIM = v; v ? UserSim.start() : UserSim.stop(); persist(); },
+    get simulate()  { return USER_SIM; },
+    clearData() {
+      document.cookie.split(';').forEach(c => {
+        document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/');
+      });
+      try { localStorage.clear(); } catch(e) {}
+      try { sessionStorage.clear(); } catch(e) {}
+      location.reload();
+    },
+  };
+
   function init() {
-    UI.build();
-    window.SpeedCheat = {
-      setSpeed,
-      get speed() { return SPEED; },
-      clearData: () => {
-        document.cookie.split(';').forEach(c => document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/'));
-        try { localStorage.clear(); } catch(e) {}
-        try { sessionStorage.clear(); } catch(e) {}
-        location.reload();
-      }
-    };
+    UI.init();
+    if (USER_SIM) UserSim.start();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
