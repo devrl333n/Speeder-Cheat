@@ -1,86 +1,129 @@
-Speeder Cheat
+Markdown
+# Speeder Cheat
 
-Speed up browsing times on any website, easily bypass countdown timers and shorten links.
+⚡ Speed up your browsing time on any website – easily bypass timeouts, countdowns, and client-side limitations.
 
-Works on PC (Tampermonkey) and Android (DevMobi / WebView).
+> **Version:** 1.2.2 Official
+> **Author:** [devrl333](https://github.com/devrl333n)
 
-Version: 1.2 Plus Stable
+> **Compatibility:** Tampermonkey, Violentmonkey, DevMobi (Android WebView)
 
-Author: devrl333
+---
 
-🚀 Main Features
+## 🚀 Features
 
-· Speed Boost: from 1x to 100x, 0.25x increments
+- **Time Speed Boost:** 1x – 1000x, 0.25x increments. Tap the button or enter the number directly.
 
-· Speed Presets: quick tap 1x, 2x, 3x, 5x, 8x, 10x, 16x, 32x, 50x, 100x
+- **Turbo Mode:** One-touch 1000x – optimized for websites that don't check time.
 
-· Automatic countdown detection and maximum speed boost
+- **GhostShield™:** Automatically hides yourself from anti-bot systems. Protects canvas, WebGL, audio, navigator, visibility, and WebRTC.
 
-· GhostShield™: prevents detection by anti-bot systems
+- **TimeSync:** Automatically corrects timestamps in requests to avoid detection of time discrepancies.
 
-· Automatically saves speed for each website
+- **User Simulation:** Simulates user actions (scrolling, mouse movement) to bypass interactive requests.
 
-· Clear Data: clears cookies, localStorage, sessionStorage and reloads the page
+- **Clear Data:** Clears cookies, localStorage, and sessionStorage – refreshes the session with a single touch.
 
-· Incognito Activity: only a small dot in the bottom right corner of the screen, tap to open the control panel
+- **Minimalist Interface:** A small circle in the upper right corner; tap to open the control panel. Automatically hides after 12 seconds of inactivity.
 
-📥 Installation
+---
 
-Method 1: Using Tampermonkey (PC or Android with add-on support)
+## 📥 Installation
 
-1. Install Tampermonkey for your browser you.
+### Method 1: Tampermonkey (PC / Android)
 
-2. Click the following link to install the script:
+1. Install [Tampermonkey](https://www.tampermonkey.net/) for your browser.
 
-speeder-cheat.user.js
-3. Tampermonkey will automatically open the installation tab; just click Install.
+2. Click on the raw script link on GitHub:
 
-4. Refresh the webpage you want to speed up, and the script will automatically start.
+`https://raw.githubusercontent.com/devrl333n/Speeder-Cheat/main/speeder-cheat.user.js`
+3. Tampermonkey will open the settings tab – click **Install**.
 
-Method 2: Using DevMobi (Android WebView)
+4. Refresh the page you want to speed up; the script will automatically start.
 
-1. Download the speeder-cheat.user.js file from this repository to your computer.
+### Method 2: DevMobi (Android WebView)
 
-2. Place the file in the assets folder of your DevMobi application.
+1. Download the `speeder-cheat.user.js` file to your computer.
+
+2. Place the file in the `assets` folder of your application.
 
 3. Inject the script into the WebView using the command:
+
 
 ```java
 
 webView.loadUrl("javascript:(function() { var s = document.createElement('script'); s.src = 'file:///android_asset/speeder-cheat.user.js'; document.head.appendChild(s); })()");
 
 ```
-4. The script will run in the background, displaying a small dot in the bottom right corner for operation.
+
+4. The script will run in the background and display a control circle.
+
+---
 
 🕹️ How to use
 
-· Open the control panel: touch (or click) the small circle in the bottom right corner of the screen.
+· Open the control panel: Tap (click) the small circle in the bottom right corner.
 
-· Change speed:
+· Change the speed:
 
-· Press the − or + buttons to increase/decrease by 0.25x.
+· Press - or + to increase/decrease by 0.25x.
 
-· Tap the speed number in the middle to enter a value directly (e.g., 5, 10.5, 100).
+· Tap the speed number in the middle to enter a value directly (e.g., 5, 10.5, 1000).
 
-· Quickly press the preset buttons (1x, 2x, 5x, 8x…).
+• Turbo 1000x: Press the Turbo 1000x button to instantly increase speed to maximum.
 
-· Automatically speed up during a countdown: when the script detects a countdown timer on the page, it will temporarily speed up to the maximum to complete it as quickly as possible.
+• Clear data: Press Clear Data to clear cookies, localStorage, sessionStorage and reload the page.
 
-· Clear page data: press the 🗑 Clear Data button in the control panel to clear cookies, localStorage, sessionStorage and reload the page (use when locked or to refresh the session).
+• Hide the console: Tap the circle again or wait 12 seconds of inactivity.
 
-• Hide the control panel: Tap the circle again or wait 20 seconds of inactivity, and the panel will hide automatically.
+Tip: You can use SpeedCheat.setSpeed(5) in the Console for remote control.
 
-• Shortcut (PC): Ctrl + Shift + Z to quickly hide/show the control panel.
+---
+
+⚙️ Advanced Configuration
+
+Open Console (F12) and use the following commands:
+
+```javascript
+SpeedCheat.speed = 10; // set speed to 10x
+SpeedCheat.timeSync = false; // turn off TimeSync
+SpeedCheat.simulate = true; // turn on user simulation
+SpeedCheat.clearData(); // clear data + reload
+```
+
+All settings are saved separately for each domain.
+
+---
 
 ⚠️ Note
 
-• Some sites may detect time acceleration. GhostShield™ helps reduce the risk, but it is not 100% guaranteed.
+· Server-side timer: Some sites (like NhapMa, Link4M) check real-time server time. Speeder Cheat cannot shorten the actual waiting time in these cases – but it helps automate and hide perfectly.
 
-• If you are locked out or cannot obtain the code, use the Clear Data button to reset your session.
+· Turbo 1000x: May cause some sites to become unstable. Reduce speed if you encounter errors.
 
-• Excessive speed (above 16x) may cause some sites to malfunction. Try lowering the speed if you encounter errors.
+· Client-side only: The script does not interfere with your server or data.
 
-• The script only runs on the client side and cannot bypass server-side limitations.
+---
+
+🛡️ GhostShield™
+
+Speeder Cheat is equipped with anti-detection protection layers:
+
+· Canvas / WebGL / Audio fingerprint spoofing
+
+· Navigator properties (webdriver, plugins, languages…)
+
+· Visibility API lock (always shows “visible”)
+
+· WebRTC IP leak prevention
+
+· Error stack cleanup
+
+· Function.prototype.toString camouflage
+
+GhostShield™ helps you use the tool safely, minimizing the risk of being blocked.
+
+---
 
 📄 License
 
@@ -88,6 +131,8 @@ MIT – free to use, modify, and share.
 
 ---
 
-Enjoy! If you find this helpful, please ⭐ this repo.
+Enjoy! If you find it useful, please ⭐ this repo.
 
-Please open any issues or provide feedback on GitHub.
+For any issues or suggestions, please open an issue on GitHub.
+
+```
